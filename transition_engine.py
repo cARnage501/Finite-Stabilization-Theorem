@@ -171,7 +171,8 @@ def transition_step(
     # Γ_{n+1} = Γ_0 ∪ ⋂_{H in Ξ_n} Cn^Q(Γ_n ∪ Θ(H))
     # NOTE: uses Ξ_n by design.
     if not xi_n.hypotheses:
-        skeptical_core = q.literal_universe()
+        # Section 2.2 convention: ⋂_{H∈∅} Cn^Q(...) := Q (atoms only).
+        skeptical_core = set(q.atoms)
     else:
         closures = []
         for h in xi_n.hypotheses:
