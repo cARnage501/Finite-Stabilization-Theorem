@@ -1,4 +1,4 @@
-"""Reference transition module for Section 2.2 update equations.
+"""Reference transition module for the repository's normative update equations.
 
 Implements a deterministic single-step transition
     (Γ_n, Ξ_n) -> (Γ_{n+1}, Ξ_{n+1})
@@ -10,7 +10,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Dict, Iterable, Mapping, Sequence, Tuple
-
 
 Literal = str
 Hypothesis = str
@@ -113,10 +112,7 @@ class FixedPointResult:
 
 
 def closure_Q(S: Iterable[Literal], rules: Sequence[HornRule], q: Q) -> Gamma:
-    """Forward Horn closure restricted to Q-literals.
-
-    Only literals in Q's literal universe are retained in the closure.
-    """
+    """Forward Horn closure restricted to Q-literals."""
     allowed = q.literal_universe()
     closed = set(S) & allowed
 
@@ -134,7 +130,7 @@ def closure_Q(S: Iterable[Literal], rules: Sequence[HornRule], q: Q) -> Gamma:
 
 
 def entails_bottom_Q(S: Iterable[Literal], q: Q) -> bool:
-    """S ⊢_Q ⊥ iff ∃u∈Q such that {u, ¬u} ⊆ S."""
+    """S ⊢_Q ⊥ iff there exists u in Q with {u, ¬u} ⊆ S."""
     facts = set(S)
     for u in q.atoms:
         if u in facts and neg(u) in facts:
@@ -151,11 +147,12 @@ def transition_step(
     q: Q,
     rules: Sequence[HornRule],
 ) -> StepResult:
-    """Execute exactly one transition step from Section 2.2.
+    """Execute exactly one deterministic transition step.
 
-    Enforced schedule:
-      * Ξ-update uses Γ_n.
-      * Γ-update uses Ξ_n (not Ξ_{n+1}).
+    Normative schedule:
+      * Ξ-update uses Γ_n and Obs.
+      * Γ-update uses Ξ_{n+1}, not Ξ_n.
+      * If Ξ_{n+1} is empty, the skeptical core is empty.
     """
     gamma_n_set = gamma_n.as_set()
     obs_set = obs.as_set()
@@ -168,18 +165,13 @@ def transition_step(
             xi_next_items.append(h)
     xi_next = Xi.from_items(xi_next_items)
 
-    # Γ_{n+1} = Γ_0 ∪ ⋂_{H in Ξ_n} Cn^Q(Γ_n ∪ Θ(H))
-    # NOTE: uses Ξ_n by design.
-    if not xi_n.hypotheses:
-        # Section 2.2 convention: ⋂_{H∈∅} Cn^Q(...) := Q (atoms only).
-        skeptical_core = set(q.atoms)
-    else:
-        closures = []
-        for h in xi_n.hypotheses:
-            support = set(theta.get(h, ()))
-            closures.append(closure_Q(gamma_n_set | support, rules, q).as_set())
-        skeptical_core = set.intersection(*closures) if closures else set()
+    # Γ_{n+1} = Γ_0 ∪ ⋂_{H in Ξ_{n+1}} Cn^Q(Γ_n ∪ Θ(H)), with empty core = ∅.
+    closures = []
+    for h in xi_next.hypotheses:
+        support = set(theta.get(h, ()))
+        closures.append(closure_Q(gamma_n_set | support, rules, q).as_set())
 
+    skeptical_core = set.intersection(*closures) if closures else set()
     gamma_next = Gamma.from_items(gamma0.as_set() | skeptical_core)
     return StepResult(gamma_next=gamma_next, xi_next=xi_next)
 
