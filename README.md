@@ -1,52 +1,59 @@
 # Finite Stabilization Theorem
 
-A research repository exploring a deterministic reasoning architecture where iterative updates over beliefs and hypotheses converge to a stable fixed point.
+A research repository for a deterministic abductive fixed-point reasoning architecture in which iterative updates over commitments and hypotheses converge to a stable state.
 
 ## Core idea
 
-Given an update operator `F` on a state space `S`, the project studies conditions under which repeated updates stabilize:
+Let `X_n = (Γ_n, Ξ_n)` be the epistemic state at stage `n`, where:
 
-> There exists an `N < ∞` such that `X(N+1) = X(N)`, and therefore `X(t) = X(N)` for all `t ≥ N`.
+- `Γ_n` is the accepted commitment set,
+- `Ξ_n` is the surviving hypothesis set.
 
-In this repo, that abstract statement is specialized to iterative skeptical reasoning with:
-- accepted commitments (`Γ_n`),
-- surviving hypotheses (`Ξ_n`),
-- consistency filtering against observations,
-- bounded closure, and
-- fixed-point detection.
+The engine alternates between:
+
+1. filtering hypotheses by consistency with the current commitments and observations,
+2. computing bounded closures for the surviving hypotheses,
+3. intersecting those closures skeptically,
+4. stopping when the state no longer changes.
+
+The repository now fixes one normative schedule:
+
+- first compute `Ξ_{n+1}` from `Ξ_n`,
+- then compute `Γ_{n+1}` from closures indexed by `Ξ_{n+1}`.
+
+It also fixes the empty-survivor convention:
+
+- if `Ξ_{n+1} = ∅`, then the skeptical core is `∅`, so `Γ_{n+1} = Γ_0`.
+
+These conventions are part of the semantics rather than implementation choices.
 
 ## Repository map
 
-- [`proposal-arch.md`](proposal-arch.md)
-  Working paper draft defining the theorem program and companion results (termination, monotonicity, soundness, complexity, sensitivity, identifiability, robustness).
+- [`proposal-arch.md`](proposal-arch.md)  
+  Theorem-oriented statement of the update system, conventions, and companion result agenda.
 
-- [`ARCHITECTURE_OUTLINE.md`](ARCHITECTURE_OUTLINE.md)
-  Implementation-oriented blueprint: component boundaries, state updates, data contracts, invariants, verification strategy, and roadmap.
+- [`ARCHITECTURE_OUTLINE.md`](ARCHITECTURE_OUTLINE.md)  
+  Implementation-oriented blueprint with normative transition semantics, invariants, component boundaries, and verifier hooks.
 
-- [`KR-mine-search.md`](KR-mine-search.md)
-  Literature synthesis focused on nearest KR sources for deterministic abductive fixed-point architectures.
+- [`transition_engine.py`](transition_engine.py)  
+  Reference deterministic transition module implementing the same schedule and empty-set convention as the documents.
 
-- [`Deeper.md`](Deeper.md)
-  Extended formal KR source-to-architecture mapping and relevance analysis.
+- [`KR-mine-search.md`](KR-mine-search.md)  
+  Literature synthesis on abductive, fixed-point, and verification-adjacent KR sources.
+
+- [`Deeper.md`](Deeper.md)  
+  Extended source-to-architecture mapping notes.
 
 ## Current status
 
-This repository is currently **design and theory first**:
-- formal model and theorem agenda are drafted,
-- architecture blueprint is specified,
-- implementation modules are identified but not yet fully built.
-
-## Suggested next steps
-
-1. Define machine-readable problem and certificate schemas in `/spec`.
-2. Add executable pseudocode and reference implementation skeleton in `/engine`.
-3. Add finite benchmark cases in `/benchmarks` with expected fixed points.
-4. Add a minimal verifier CLI to check iteration artifacts independently.
+This repository is still theory-first, but it now has a single repo-wide transition semantics rather than a split between document and prototype behavior.
 
 ## Why this framing
 
-The emphasis is on making convergence a first-class semantic object, not an accidental byproduct:
-- deterministic updates,
+The point is to make convergence a semantic object that is reproducible and independently checkable:
+
+- deterministic transitions,
 - explicit stabilization criteria,
+- bounded consequence computation,
 - auditable iteration traces,
-- independent verification of transitions and outputs.
+- independent verification of each step.
