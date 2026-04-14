@@ -48,7 +48,9 @@ And a static `ProblemSpec`:
 Primary update scheme (matching current theorem notes):
 
 - `Xi_{n+1} = {H in Xi_n | Consistent(Gamma_n ∪ Theta(H) ∪ Obs ∪ IC)}`
-- `Gamma_{n+1} = Gamma0 ∪ Intersect_{H in Xi_n}(Closure_Q(Gamma_n ∪ Theta(H) ∪ Rules))`
+- `Gamma_{n+1}` is computed **only from post-filter hypotheses** `Xi_{n+1}` (fixed globally for all runs):
+  - if `Xi_{n+1} ≠ ∅`: `Gamma_{n+1} = Gamma0 ∪ Intersect_{H in Xi_{n+1}}(Closure_Q(Gamma_n ∪ Theta(H) ∪ Rules))`
+  - if `Xi_{n+1} = ∅`: `Gamma_{n+1} = Gamma_n` (explicit fail-closed rule; no empty-family intersection is evaluated).
 
 Stop when `(Gamma_{n+1}, Xi_{n+1}) == (Gamma_n, Xi_n)`.
 
@@ -138,7 +140,7 @@ Stop when `(Gamma_{n+1}, Xi_{n+1}) == (Gamma_n, Xi_n)`.
    - For each `H in Xi_n`:
      - evaluate consistency of `Gamma_n ∪ Theta(H) ∪ Obs ∪ IC`;
      - keep or remove `H` with explicit reason/certificate.
-   - Compute closure for each `H in Xi_n` (per schedule choice: current set or next set, must be fixed globally).
+   - Compute closure for each `H in Xi_{n+1}` (post-filter schedule, fixed by spec; no runtime choice).
    - Aggregate skeptically to form `Gamma_{n+1}`.
    - Emit iteration artifact bundle (inputs, outputs, traces, hashes).
    - Stop on fixed point.
