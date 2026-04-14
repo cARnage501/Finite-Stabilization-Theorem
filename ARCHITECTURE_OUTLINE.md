@@ -74,6 +74,10 @@ with `C_n(H) ⊆ Q`.
 - if `Xi_{n+1} != ∅`, then `Skeptical_n = ⋂_{H in Xi_{n+1}} C_n(H)`
 - if `Xi_{n+1} = ∅`, then `Skeptical_n = ∅`
 
+- `Xi_{n+1} = {H in Xi_n | Consistent(Gamma_n ∪ Theta(H) ∪ Obs ∪ IC)}`
+- `Gamma_{n+1}` is computed **only from post-filter hypotheses** `Xi_{n+1}` (fixed globally for all runs):
+  - if `Xi_{n+1} ≠ ∅`: `Gamma_{n+1} = Gamma0 ∪ Intersect_{H in Xi_{n+1}}(Closure_Q(Gamma_n ∪ Theta(H) ∪ Rules))`
+  - if `Xi_{n+1} = ∅`: `Gamma_{n+1} = Gamma_n` (explicit fail-closed rule; no empty-family intersection is evaluated).
 and:
 
 - `Gamma_{n+1} = Gamma0 ∪ Skeptical_n`
@@ -184,14 +188,14 @@ No runtime choice between `Xi_n` and `Xi_{n+1}` in the `Gamma` update is complia
 1. Load and normalize `ProblemSpec`.
 2. Initialize `Gamma_0 := Gamma0` and `Xi_0 := Xi0`.
 3. For each iteration `n`:
-   - for each `H in Xi_n`, evaluate `Consistent(Gamma_n ∪ Theta(H), Obs, IC)`
-   - form `Xi_{n+1}` from the surviving hypotheses
-   - for each `H in Xi_{n+1}`, compute `C_n(H) = Closure_Q(Gamma_n ∪ Theta(H) ∪ Rules)`
-   - compute the skeptical core over `Xi_{n+1}`
-   - set `Gamma_{n+1} = Gamma0 ∪ Skeptical_n`
-   - emit an iteration artifact bundle
-   - stop on fixed point
-4. Run the independent verifier over the artifact bundle.
+   - For each `H in Xi_n`:
+     - evaluate consistency of `Gamma_n ∪ Theta(H) ∪ Obs ∪ IC`;
+     - keep or remove `H` with explicit reason/certificate.
+   - Compute closure for each `H in Xi_{n+1}` (post-filter schedule, fixed by spec; no runtime choice).
+   - Aggregate skeptically to form `Gamma_{n+1}`.
+   - Emit iteration artifact bundle (inputs, outputs, traces, hashes).
+   - Stop on fixed point.
+4. Run independent verifier over the artifact bundle.
 5. Publish final outputs and metrics.
 
 ---
