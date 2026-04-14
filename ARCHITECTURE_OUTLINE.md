@@ -1,141 +1,192 @@
 # Architecture Outline: Deterministic Abductive Fixed-Point Reasoning System
 
-## 1) Purpose and scope
+## 1. Purpose and scope
 
-This document translates the repository research notes into an implementable architecture for a **deterministic, abductive, fixed-point reasoning engine**.
+This document specifies an implementable architecture for a deterministic, abductive, fixed-point reasoning engine.
 
 The target system repeatedly:
+
 1. proposes candidate hypotheses,
-2. computes bounded consequences,
-3. filters hypotheses against observations and consistency constraints,
+2. filters hypotheses against observations and consistency constraints,
+3. computes bounded consequences for the viable hypotheses,
 4. aggregates skeptical commitments,
 5. stops at stabilization.
 
-The architecture is designed so that each step is auditable, testable, and independently verifiable.
+The architecture is designed so that each transition is auditable, testable, deterministic, and independently verifiable.
 
 ---
 
-## 2) Design goals (derived from current docs)
+## 2. Design goals
 
-- **Determinism:** same input state must produce the same next state.
-- **Finite stabilization:** under finite assumptions, the trajectory reaches a fixed point in finite steps.
-- **Abductive narrowing:** maintain and shrink a hypothesis set based on consistency with observations and commitments.
-- **Skeptical acceptance:** accept conclusions only when they survive across viable hypotheses.
-- **Verification separation:** keep proposal/generation logic separate from trusted checking.
-- **Case-space closure controls:** support finite enumeration or bounded exploration with explicit stopping criteria.
+- **Determinism**: the same canonical input state and specification must produce the same next state.
+- **Finite stabilization**: under finite assumptions, the trajectory reaches a fixed point in finitely many steps.
+- **Abductive narrowing**: the system maintains and shrinks a hypothesis set based on consistency with observations and commitments.
+- **Skeptical acceptance**: conclusions are accepted only when they survive across all viable hypotheses.
+- **Verification separation**: generation and checking remain separable.
+- **Replayability**: independent re-execution of the step relation must reproduce the same outputs and hashes.
 
 ---
 
-## 3) Core formal state model
+## 3. Core formal state model
 
-Use the state tuple:
+### 3.1 State and specification
+
+At iteration `n`, the dynamic state is:
 
 - `State_n = (Gamma_n, Xi_n, Meta_n)`
   - `Gamma_n`: accepted commitments at iteration `n`
   - `Xi_n`: surviving hypotheses at iteration `n`
-  - `Meta_n`: diagnostics/telemetry (`n`, hashes, timings, proof artifacts, conflict sets)
+  - `Meta_n`: diagnostics and telemetry (`n`, hashes, timings, proof artifacts, conflict sets)
 
-And a static `ProblemSpec`:
+The static problem specification is:
 
-- `Gamma0`: initial commitments/theory
+- `Gamma0`: initial commitments
 - `Xi0`: initial hypothesis pool
-- `Theta(H)`: hypothesis-to-theory expansion
+- `Theta(H)`: deterministic hypothesis-to-theory expansion
 - `Obs`: observations
-- `Q`: bounded query vocabulary
-- `Rules`: Horn or Horn-like closure rules (deterministic)
+- `Q`: finite bounded query vocabulary
+- `Rules`: deterministic Horn or Horn-like closure rules
 - `IC`: integrity constraints
+- `Profile`: semantic profile identifier and execution flags
 
-Primary update scheme (matching current theorem notes):
+All closure outputs are subsets of `Q` after canonicalization.
+
+### 3.2 Normative transition function
+
+The transition function is total and functional.
+
+#### Step 1: filter viable hypotheses
+
+- `Xi_{n+1} = { H in Xi_n | Consistent(Gamma_n ∪ Theta(H), Obs, IC) }`
+
+Here `Consistent(T, Obs, IC)` is a deterministic meta-level predicate. Integrity constraints are checked as constraints, not silently treated as ordinary closure facts unless the profile says otherwise.
+
+#### Step 2: compute bounded closures for viable hypotheses only
+
+For each `H in Xi_{n+1}`, define:
+
+- `C_n(H) = Closure_Q(Gamma_n ∪ Theta(H) ∪ Rules)`
+
+with `C_n(H) ⊆ Q`.
+
+#### Step 3: aggregate skeptical commitments
+
+- if `Xi_{n+1} != ∅`, then `Skeptical_n = ⋂_{H in Xi_{n+1}} C_n(H)`
+- if `Xi_{n+1} = ∅`, then `Skeptical_n = ∅`
 
 - `Xi_{n+1} = {H in Xi_n | Consistent(Gamma_n ∪ Theta(H) ∪ Obs ∪ IC)}`
 - `Gamma_{n+1}` is computed **only from post-filter hypotheses** `Xi_{n+1}` (fixed globally for all runs):
   - if `Xi_{n+1} ≠ ∅`: `Gamma_{n+1} = Gamma0 ∪ Intersect_{H in Xi_{n+1}}(Closure_Q(Gamma_n ∪ Theta(H) ∪ Rules))`
   - if `Xi_{n+1} = ∅`: `Gamma_{n+1} = Gamma_n` (explicit fail-closed rule; no empty-family intersection is evaluated).
+and:
 
-Stop when `(Gamma_{n+1}, Xi_{n+1}) == (Gamma_n, Xi_n)`.
+- `Gamma_{n+1} = Gamma0 ∪ Skeptical_n`
+
+This empty-set convention is normative. No host-language default for empty intersections is permitted.
+
+### 3.3 Termination condition
+
+Stop when:
+
+- `(Gamma_{n+1}, Xi_{n+1}) == (Gamma_n, Xi_n)`
+
+where equality is structural equality over canonicalized sets.
+
+### 3.4 Fixed schedule rule
+
+This architecture fixes exactly one update schedule:
+
+1. compute `Xi_{n+1}` by filtering `Xi_n`,
+2. compute `Gamma_{n+1}` from closures indexed by `Xi_{n+1}`.
+
+No runtime choice between `Xi_n` and `Xi_{n+1}` in the `Gamma` update is compliant.
 
 ---
 
-## 4) Component architecture
+## 4. Component architecture
 
-## 4.1 Input & normalization layer
+### 4.1 Input and normalization layer
 
 **Responsibility**
-- Parse and normalize `ProblemSpec`.
-- Enforce finiteness profile (`Q`, bounded symbols, function-free mode for MVP).
-- Canonicalize literals/rules for deterministic hashing.
+- parse and normalize `ProblemSpec`
+- enforce the supported finiteness profile
+- canonicalize literals, rules, and hypotheses for deterministic hashing
 
 **Outputs**
 - `NormalizedSpec`
-- deterministic IDs for hypotheses/rules/literals.
+- deterministic IDs for hypotheses, rules, literals, and constraints
 
-## 4.2 Hypothesis manager
+### 4.2 Hypothesis manager
 
 **Responsibility**
-- Store `Xi_n`, hypothesis metadata, and signatures.
-- Provide deterministic iteration order.
-- Track elimination reasons (`conflict with Obs`, `violates IC`, `inconsistent with Gamma_n`).
+- store `Xi_n` and hypothesis metadata
+- provide deterministic iteration order
+- track elimination reasons and certificates
 
 **Outputs**
-- `Xi_n` set/list and elimination report.
+- `Xi_n`
+- elimination report and certificates
 
-## 4.3 Closure engine (bounded consequence writer)
+### 4.3 Closure engine
 
 **Responsibility**
-- Compute `Closure_Q(S)` using deterministic forward chaining.
-- Restrict conclusions to vocabulary `Q`.
-- Emit derivation traces (minimal proof DAG or rule-fire log).
+- compute `Closure_Q(S)` using deterministic forward chaining
+- restrict emitted conclusions to `Q`
+- emit derivation traces
 
 **Outputs**
-- closure set per hypothesis
-- derivation trace artifacts.
+- closure set per viable hypothesis
+- derivation trace artifacts
 
-## 4.4 Consistency & integrity checker
+### 4.4 Consistency and integrity checker
 
 **Responsibility**
-- Decide `Consistent(S)` against contradictions and integrity constraints.
-- Produce minimal conflict set if inconsistent.
+- decide `Consistent(T, Obs, IC)` deterministically
+- produce an inconsistency witness when applicable
 
 **Outputs**
-- boolean decision + optional conflict certificate.
+- boolean decision
+- optional conflict certificate
 
-## 4.5 Skeptical aggregator
+### 4.5 Skeptical aggregator
 
 **Responsibility**
-- Compute intersection across viable hypothesis closures.
-- Merge with `Gamma0`.
-- Enforce canonical representation and monotonicity policy.
+- compute the skeptical aggregate over closures for `Xi_{n+1}`
+- apply the empty-viable-set rule deterministically
+- merge with `Gamma0`
 
 **Outputs**
-- `Gamma_{n+1}` + change set vs `Gamma_n`.
+- `Gamma_{n+1}`
+- change set versus `Gamma_n`
 
-## 4.6 Stabilization controller
+### 4.6 Stabilization controller
 
 **Responsibility**
-- Run iteration loop.
-- Detect fixed point and compute `n*`.
-- Guard with hard limits (`max_iterations`, `max_case_checks`) and classify termination mode.
+- run the iteration loop
+- detect fixed points
+- enforce hard limits such as `max_iterations`
 
 **Outputs**
 - final state `(Gamma*, Xi*)`
-- trajectory and convergence report.
+- trajectory and convergence report
 
-## 4.7 Independent verifier (trusted kernel)
+### 4.7 Independent verifier
 
 **Responsibility**
-- Re-check candidate step transitions from produced artifacts.
-- Validate each elimination and each accepted conclusion.
-- Optionally verify full run hash-chain.
+- re-check each recorded transition against the normative step semantics
+- validate eliminations, closures, and accepted skeptical conclusions
+- verify the run hash-chain when enabled
 
 **Outputs**
-- pass/fail verdict + machine-checkable report.
+- pass/fail verdict
+- machine-checkable verification report
 
 ---
 
-## 5) Execution flow
+## 5. Execution flow
 
-1. Load `ProblemSpec`; normalize and validate constraints.
-2. Initialize `Gamma_0 := Gamma0`, `Xi_0 := Xi0`.
+1. Load and normalize `ProblemSpec`.
+2. Initialize `Gamma_0 := Gamma0` and `Xi_0 := Xi0`.
 3. For each iteration `n`:
    - For each `H in Xi_n`:
      - evaluate consistency of `Gamma_n ∪ Theta(H) ∪ Obs ∪ IC`;
@@ -149,66 +200,66 @@ Stop when `(Gamma_{n+1}, Xi_{n+1}) == (Gamma_n, Xi_n)`.
 
 ---
 
-## 6) Data contracts
+## 6. Data contracts
 
 Minimal JSON-like contracts:
 
-- `hypothesis`:
+- `hypothesis`
   - `id`, `assumptions[]`, `signature[]`, `status`
-- `iteration_record`:
+- `iteration_record`
   - `n`, `gamma_in_hash`, `xi_in_hash`, `kept[]`, `eliminated[]`, `gamma_out_hash`, `xi_out_hash`, `timings`
-- `certificate`:
+- `certificate`
   - `type` (`consistency`, `inconsistency`, `derivation`, `intersection`)
   - `payload`
   - `checker_version`
   - `digest`
-- `run_report`:
-  - `n_star`, `termination_mode`, `|Gamma*|`, `|Xi*|`, trajectory stats, verifier verdict.
+- `run_report`
+  - `n_star`, `termination_mode`, `|Gamma*|`, `|Xi*|`, trajectory stats, verifier verdict
 
 ---
 
-## 7) Invariants and theorem hooks
+## 7. Invariants and theorem hooks
 
-Track these invariants at runtime to match theorem program goals:
+The following are normative runtime assertions and verifier targets:
 
-- `Xi_{n+1} subseteq Xi_n` (hypothesis elimination monotonicity).
-- Determinism: `Step(State_n, Spec)` is functional.
-- Boundedness: all emitted commitments belong to `Q`.
-- Soundness hook: each `phi in Gamma_n` has derivation support in closure traces.
-- Stabilization check: equality is structural over canonicalized sets.
-
-These invariants become executable assertions, not just paper claims.
+- `Xi_{n+1} ⊆ Xi_n`
+- `Step(State_n, Spec)` is functional
+- all emitted commitments belong to `Q`
+- every accepted non-base commitment has derivation support across all viable closures
+- stabilization is tested by structural equality over canonicalized sets
+- if `Xi_{n+1} = ∅`, then `Gamma_{n+1} = Gamma0`
 
 ---
 
-## 8) Complexity and scaling model
+## 8. Complexity and scaling model
 
-Per iteration (rough order):
+Per iteration, roughly:
 
 - consistency checks: `O(|Xi_n| * C_consistency)`
-- closures: `O(|Xi_n| * C_closure(|Q|, |Rules|))`
-- skeptical intersection: `O(total_closure_size)`
+- closures: `O(|Xi_{n+1}| * C_closure(|Q|, |Rules|))`
+- skeptical intersection: `O(total closure size over viable hypotheses)`
 
-Total:
+Total runtime:
 
-- `T_total = Sum_{n=0..n*-1} T_step(n)`
+- `T_total = Σ_{n=0}^{n*-1} T_step(n)`
 
 Practical levers:
 
-- cache closure by `(Gamma_n_hash, hypothesis_id)` when safe,
-- early prune before full closure,
-- partition hypotheses by signatures,
-- parallelize closure/checking while preserving deterministic reduction order.
+- cache closures by safe keys such as `(gamma_hash, hypothesis_id, rules_hash)`
+- prune before full closure
+- partition hypotheses by signatures
+- parallelize local checks while preserving deterministic reduction order
 
 ---
 
-## 9) Reference MVP design
+## 9. Reference MVP design
 
 **MVP constraints**
-- function-free Horn rules,
-- finite `Q`, finite `Xi0`,
-- deterministic contradiction test (`u` and `not_u` style encoding),
-- JSON artifact emission per iteration.
+- function-free Horn rules
+- finite `Q`
+- finite `Xi0`
+- deterministic contradiction testing
+- JSON artifact emission per iteration
 
 **MVP modules**
 - `spec_parser`
@@ -219,58 +270,62 @@ Practical levers:
 - `independent_checker`
 
 **MVP acceptance criteria**
-- reproduces same `(Gamma*, Xi*, n*)` across repeated runs,
-- emits full elimination reasons,
-- verifier independently confirms every transition,
-- includes benchmark cases with known fixed points.
+- reproduces the same `(Gamma*, Xi*, n*)` across repeated runs
+- emits full elimination reasons
+- handles `Xi_{n+1} = ∅` exactly as specified
+- uses the fixed post-filter aggregation schedule
+- allows the verifier to confirm every transition independently
 
 ---
 
-## 10) Roadmap (phased)
+## 10. Roadmap
 
-### Phase 1 — Formal/Executable core
-- implement deterministic loop and invariants,
-- establish fixed-point detection and trajectory logging,
-- deliver theorem-to-assertion mapping.
+### Phase 1 — Formal / executable core
+- implement the deterministic loop and runtime invariants
+- establish fixed-point detection and trajectory logging
+- map theorem claims to executable assertions
 
 ### Phase 2 — Verification hardening
-- add certificate format and checker CLI,
-- produce tamper-evident hash-chain across iterations,
-- add replay mode for third-party verification.
+- add certificate schemas and checker CLI
+- produce a tamper-evident hash-chain across iterations
+- add replay mode for third-party verification
 
 ### Phase 3 — Richer semantics
-- support well-founded/alternating fixed-point variants,
-- plug in abductive minimality criteria,
-- add schedule comparison mode (`Xi_n` vs `Xi_{n+1}` in Gamma update).
+- support well-founded or alternating fixed-point variants
+- add abductive minimality criteria
+- add alternative semantics only as separately versioned profiles, not runtime ambiguities
 
-### Phase 4 — Robustness & sensitivity
-- perturbation experiments for `Obs`,
-- measure `delta n*`, `delta |Xi*|`, `delta |Gamma*|`,
-- identify phase-transition regimes and stability envelopes.
-
----
-
-## 11) Risks and mitigations
-
-- **State explosion in hypothesis space**
-  - mitigate with signature-based pruning, conflict-directed elimination, bounded case exploration.
-- **Semantic drift between generator and verifier**
-  - mitigate with strict certificate schema and checker-first contract tests.
-- **Non-termination outside finite fragment**
-  - mitigate with explicit profile flags and rejection of unsupported specs for deterministic mode.
-- **Ambiguous schedule choices**
-  - mitigate by pinning schedule in spec version and recording it in artifacts.
+### Phase 4 — Robustness and sensitivity
+- perturb `Obs`
+- measure `Δn*`, `Δ|Xi*|`, and `Δ|Gamma*|`
+- characterize stability envelopes
 
 ---
 
-## 12) Suggested repository alignment
+## 11. Risks and mitigations
 
-- Keep theory docs (`proposal-arch.md`, literature notes) as rationale.
-- Treat this document as implementation blueprint.
+- **State explosion in hypothesis space**  
+  Mitigate with signature-based pruning, conflict-directed elimination, and bounded case exploration.
+
+- **Semantic drift between generator and verifier**  
+  Mitigate with one normative transition definition, strict certificate schemas, and checker-first contract tests.
+
+- **Non-termination outside the finite fragment**  
+  Mitigate with explicit profile flags and rejection of unsupported specifications in deterministic mode.
+
+- **Underspecified semantics**  
+  Mitigate by fixing the update schedule and the empty-family behavior in the specification itself.
+
+---
+
+## 12. Suggested repository alignment
+
+- Keep theory documents as rationale.
+- Treat this document as the implementation blueprint.
 - Next add:
   - `/spec/problem-schema.md`
   - `/spec/certificate-schema.md`
   - `/engine/pseudocode.md`
-  - `/benchmarks/` for finite stabilization test cases.
+  - `/benchmarks/` with finite stabilization test cases
 
-This gives a clean bridge from theorem statements to a buildable system.
+This gives a direct bridge from theorem statements to an executable, verifier-friendly system.
